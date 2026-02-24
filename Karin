@@ -1,0 +1,147 @@
+-- CONFIG (PC mạnh thì khỏi sợ)
+local DROP_HEIGHT = 600
+local SWORD_HEIGHT = 280
+local SWORD_WIDTH = 40
+local FALL_TIME = 3.5
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local Debris = game:GetService("Debris")
+
+local player = Players.LocalPlayer
+local cam = workspace.CurrentCamera
+
+-- Màn hình đỏ + blur
+local blur = Instance.new("BlurEffect", Lighting)
+blur.Size = 0
+
+local cc = Instance.new("ColorCorrectionEffect", Lighting)
+cc.TintColor = Color3.fromRGB(255, 60, 60)
+cc.Brightness = -0.3
+cc.Enabled = false
+
+-- Rung màn mạnh
+local function screenShake(duration, power)
+	local start = tick()
+	local origin = cam.CFrame
+	while tick() - start < duration do
+		cam.CFrame = origin * CFrame.new(
+			math.random(-power, power)/8,
+			math.random(-power, power)/8,
+			0
+		)
+		RunService.RenderStepped:Wait()
+	end
+	cam.CFrame = origin
+end
+
+-- Đất đá văng
+local function groundBurst(pos)
+	for i = 1, 18 do
+		local rock = Instance.new("Part")
+		rock.Size = Vector3.new(
+			math.random(5,9),
+			math.random(5,9),
+			math.random(5,9)
+		)
+		rock.Material = Enum.Material.Slate
+		rock.Color = Color3.fromRGB(85,80,75)
+		rock.Position = pos + Vector3.new(
+			math.random(-15,15),
+			4,
+			math.random(-15,15)
+		)
+		rock.Anchored = false
+		rock.Parent = workspace
+
+		rock.AssemblyLinearVelocity = Vector3.new(
+			math.random(-90,90),
+			math.random(70,120),
+			math.random(-90,90)
+		)
+
+		Debris:AddItem(rock, 3)
+	end
+end
+
+-- Tạo kiếm
+local function createSword()
+	local model = Instance.new("Model")
+	model.Name = "HeavenSword"
+
+	-- Lưỡi kiếm
+	local blade = Instance.new("Part")
+	blade.Size = Vector3.new(SWORD_WIDTH, SWORD_HEIGHT, SWORD_WIDTH)
+	blade.Material = Enum.Material.Metal
+	blade.Color = Color3.fromRGB(220,220,220)
+	blade.Anchored = true
+	blade.Parent = model
+
+	-- Phát sáng
+	local glow = Instance.new("PointLight", blade)
+	glow.Color = Color3.fromRGB(255,200,200)
+	glow.Range = 120
+	glow.Brightness = 6
+
+	-- Chuôi
+	local handle = Instance.new("Part")
+	handle.Size = Vector3.new(SWORD_WIDTH+20, 20, SWORD_WIDTH+20)
+	handle.Material = Enum.Material.Neon
+	handle.Color = Color3.fromRGB(255,80,80)
+	handle.Anchored = true
+	handle.Position = blade.Position + Vector3.new(0, -SWORD_HEIGHT/2 - 10, 0)
+	handle.Parent = model
+
+	return model, blade
+end
+
+-- MAIN
+local char = player.Character or player.CharacterAdded:Wait()
+local root = char:WaitForChild("HumanoidRootPart")
+
+local sword, blade = createSword()
+sword.Parent = workspace
+
+local startPos = root.Position + Vector3.new(0, DROP_HEIGHT, 0)
+local endPos = root.Position + Vector3.new(0, SWORD_HEIGHT/2, 0)
+
+for _, p in ipairs(sword:GetChildren()) do
+	p.Position = startPos
+end
+
+-- Kiếm rơi chậm rãi
+TweenService:Create(
+	blade,
+	TweenInfo.new(FALL_TIME, Enum.EasingStyle.Quart, Enum.EasingDirection.In),
+	{Position = endPos}
+):Play()
+
+-- Đồng bộ chuôi theo lưỡi
+RunService.RenderStepped:Connect(function()
+	local handle = sword:FindFirstChildWhichIsA("Part", true)
+	if handle then
+		handle.Position = blade.Position + Vector3.new(0, -SWORD_HEIGHT/2 - 10, 0)
+	end
+end)
+
+-- Khi chạm đất
+task.delay(FALL_TIME, function()
+	local ex = Instance.new("Explosion")
+	ex.Position = endPos
+	ex.BlastRadius = 80
+	ex.BlastPressure = 0
+	ex.DestroyJointRadiusPercent = 0
+	ex.Parent = workspace
+
+	cc.Enabled = true
+	TweenService:Create(blur, TweenInfo.new(0.2), {Size = 30}):Play()
+	task.spawn(screenShake, 1.5, 10)
+	groundBurst(endPos)
+
+	task.delay(0.6, function()
+		TweenService:Create(blur, TweenInfo.new(0.6), {Size = 0}):Play()
+		cc.Enabled = false
+	end)
+end)
