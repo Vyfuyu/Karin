@@ -1,47 +1,108 @@
+-- CONFIG
+local BLACKHOLE_HEIGHT = 300
+local CORE_SIZE = 35
+local EVENT_HORIZON_SIZE = 120
+local SUCTION_RADIUS = 350
+local SUCTION_FORCE = 180
+local ROTATION_SPEED = 0.6
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local Debris = game:GetService("Debris")
+
 local player = Players.LocalPlayer
+local cam = workspace.CurrentCamera
 
-local char = player.Character or player.CharacterAdded:Wait()
-local root = char:WaitForChild("HumanoidRootPart")
-local hum = char:WaitForChild("Humanoid")
+-- Hiệu ứng không gian
+local blur = Instance.new("BlurEffect", Lighting)
+blur.Size = 10
 
--- Tắt mấy thứ "trần tục"
-hum:ChangeState(Enum.HumanoidStateType.Physics)
-hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
-hum:SetStateEnabled(Enum.HumanoidStateType.Running, false)
-hum.AutoRotate = false
+local cc = Instance.new("ColorCorrectionEffect", Lighting)
+cc.Contrast = 0.2
+cc.Brightness = -0.25
+cc.Saturation = -0.4
 
--- Không trọng lực
-workspace.Gravity = 0
+-- MODEL HỐ ĐEN
+local bh = Instance.new("Model", workspace)
+bh.Name = "BlackHole"
 
--- Quán tính trôi
-local vel = Instance.new("LinearVelocity")
-vel.Attachment0 = Instance.new("Attachment", root)
-vel.VectorVelocity = Vector3.new(
-	math.random(-6,6),
-	math.random(-4,4),
-	math.random(-6,6)
-)
-vel.MaxForce = math.huge
-vel.Parent = root
+-- Lõi đen
+local core = Instance.new("Part")
+core.Shape = Enum.PartType.Ball
+core.Size = Vector3.new(CORE_SIZE, CORE_SIZE, CORE_SIZE)
+core.Color = Color3.new(0,0,0)
+core.Material = Enum.Material.SmoothPlastic
+core.Anchored = true
+core.CanCollide = false
+core.Parent = bh
 
--- Xoay chậm chậm
-local ang = Instance.new("AngularVelocity")
-ang.Attachment0 = vel.Attachment0
-ang.AngularVelocity = Vector3.new(
-	math.random(-1,1),
-	math.random(-2,2),
-	math.random(-1,1)
-)
-ang.MaxTorque = math.huge
-ang.Parent = root
+-- Vành chân trời sự kiện
+local ring = Instance.new("Part")
+ring.Shape = Enum.PartType.Ball
+ring.Size = Vector3.new(EVENT_HORIZON_SIZE, EVENT_HORIZON_SIZE, EVENT_HORIZON_SIZE)
+ring.Material = Enum.Material.Neon
+ring.Color = Color3.fromRGB(80, 80, 120)
+ring.Transparency = 0.55
+ring.Anchored = true
+ring.CanCollide = false
+ring.Parent = bh
 
--- Dao động nhẹ như ngoài không gian
+-- Ánh sáng méo
+local light = Instance.new("PointLight", ring)
+light.Range = 200
+light.Brightness = 3
+light.Color = Color3.fromRGB(120,120,255)
+
+-- Particle xoáy
+local att = Instance.new("Attachment", ring)
+local dust = Instance.new("ParticleEmitter", att)
+dust.Texture = "rbxassetid://243098098"
+dust.Rate = 120
+dust.Lifetime = NumberRange.new(2,4)
+dust.Speed = NumberRange.new(40,70)
+dust.Rotation = NumberRange.new(0,360)
+dust.RotSpeed = NumberRange.new(80,140)
+dust.Size = NumberSequence.new{
+	NumberSequenceKeypoint.new(0,6),
+	NumberSequenceKeypoint.new(1,0)
+}
+dust.Transparency = NumberSequence.new{
+	NumberSequenceKeypoint.new(0,0.2),
+	NumberSequenceKeypoint.new(1,1)
+}
+
+-- Đặt vị trí trên trời
+local root = (player.Character or player.CharacterAdded:Wait()):WaitForChild("HumanoidRootPart")
+local pos = root.Position + Vector3.new(0, BLACKHOLE_HEIGHT, 0)
+core.Position = pos
+ring.Position = pos
+
+-- Animation xoay + co giãn
 RunService.RenderStepped:Connect(function(dt)
-	vel.VectorVelocity += Vector3.new(
-		math.random(-2,2),
-		math.random(-2,2),
-		math.random(-2,2)
-	) * dt
+	ring.CFrame *= CFrame.Angles(0, ROTATION_SPEED * dt, 0)
+	core.CFrame *= CFrame.Angles(0, -ROTATION_SPEED * dt * 0.6, 0)
+end)
+
+TweenService:Create(
+	ring,
+	TweenInfo.new(6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+	{Size = Vector3.new(EVENT_HORIZON_SIZE+20, EVENT_HORIZON_SIZE+20, EVENT_HORIZON_SIZE+20)}
+):Play()
+
+-- HÚT MỌI THỨ
+RunService.Heartbeat:Connect(function()
+	for _, v in ipairs(workspace:GetDescendants()) do
+		if v:IsA("BasePart")
+			and not v.Anchored
+			and (v.Position - pos).Magnitude < SUCTION_RADIUS then
+
+			local dir = (pos - v.Position)
+			local dist = dir.Magnitude + 1
+			local force = dir.Unit * (SUCTION_FORCE / dist)
+
+			v.AssemblyLinearVelocity += force
+		end
+	end
 end)
